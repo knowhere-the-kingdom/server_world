@@ -1,0 +1,19 @@
+{
+  "name": "@knowhere-the-kingdom/host-server",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "engines": {
+    "node": ">=26.5.0"
+  },
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "test": "tsx --test src/server.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3"
+  }
+}

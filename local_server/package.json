@@ -1,0 +1,8 @@
+{
+  "name": "@knowhere-the-kingdom/local-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm --prefix ../host_server run dev"
+  }
+}
