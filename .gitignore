@@ -1,0 +1,3 @@
+host_server/node_modules/
+host_server/dist/
+*.tsbuildinfo
