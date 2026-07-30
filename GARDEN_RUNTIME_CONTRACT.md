@@ -68,12 +68,21 @@ The pinned `GardenSceneProjectionV1` has exact keys
    radius 14, and the prototype diffuse/emissive/specular Garden palette.
 2. `skybox`: `solid-color-sphere`, diameter 440, 24 segments, with the
    prototype day/night palette.
-3. `sun`: `orbiting-mythic-sun`, 60-second day, 60-second night, prototype
-   sunlight color, and maximum intensity 1.25.
+3. `sun`: the procedural `mythic-sun` asset from `dev_prototype`, including
+   its approved palette, seed, medium-quality geometry, and `server_world`
+   schedule. The schedule carries day/night durations, a canonical UTC cycle
+   epoch, an offset, and a monotonic schedule revision. The default Garden
+   schedule remains a 60-second day and 60-second night.
 
 Babylon.js consumes this projection on web/mobile. It must not invent another
 scene, world, seed, or clock contract. `GET /v1/world/scene` is a private
 diagnostic/adapter read only; normal client bootstrap does not require it.
+
+The browser calculates only the visual position for the current instant. It
+does not start, reset, or override the cycle. Each `server_world` process owns
+its configured schedule through `WORLD_SUN_DAY_DURATION_SECONDS`,
+`WORLD_SUN_NIGHT_DURATION_SECONDS`, `WORLD_SUN_CYCLE_EPOCH`,
+`WORLD_SUN_CYCLE_OFFSET_SECONDS`, and `WORLD_SUN_SCHEDULE_REVISION`.
 
 ## Integration required outside this repository
 

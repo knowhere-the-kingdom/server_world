@@ -134,7 +134,14 @@ function relayCallerAllowed(request: IncomingMessage, config: WorldHandlerConfig
 
 function makeRuntime(config: WorldHandlerConfig, now: () => Date): GardenWorldRuntime | null {
   if (!runtimeConfigured(config)) return null;
-  return new GardenWorldRuntime(config.runtimeMode!, config.runtimeLeaseMs!, config.runtimeMaxInstances!, now);
+  return new GardenWorldRuntime(
+    config.runtimeMode!,
+    config.runtimeLeaseMs!,
+    config.runtimeMaxInstances!,
+    now,
+    undefined,
+    config.sunSchedule,
+  );
 }
 
 export function createWorldHandler(

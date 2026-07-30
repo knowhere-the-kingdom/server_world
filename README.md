@@ -55,6 +55,11 @@ WORLD_RUNTIME_CALLER_ENVIRONMENT=<expected environment>
 WORLD_ADMISSION_SIGNING_SECRET=<same private Gatekeeper secret, at least 32 bytes>
 WORLD_RUNTIME_LEASE_MS=900000
 WORLD_RUNTIME_MAX_INSTANCES=256
+WORLD_SUN_DAY_DURATION_SECONDS=60
+WORLD_SUN_NIGHT_DURATION_SECONDS=60
+WORLD_SUN_CYCLE_EPOCH=2026-01-01T00:00:00.000Z
+WORLD_SUN_CYCLE_OFFSET_SECONDS=0
+WORLD_SUN_SCHEDULE_REVISION=1
 ```
 
 Local mode defaults to `127.0.0.1` and rejects a configured non-loopback host.
@@ -74,4 +79,4 @@ npm run typecheck
 
 Tests cover legacy relay compatibility, strict caller rejection, exact anonymous
 prewarm idempotency, host and local modes, scene-enriched ticket-free bootstrap,
-and the exact three-component Garden scene.
+the exact three-component Garden scene, and bounded per-world sun schedules.

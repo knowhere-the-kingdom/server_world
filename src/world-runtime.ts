@@ -5,6 +5,22 @@ import { GARDEN_SCENE_SCHEMA_VERSION, GARDEN_WORLD_ID } from "./protocol.js";
 
 export type WorldRuntimeMode = "host" | "local";
 
+export type WorldSunSchedule = Readonly<{
+  dayDurationSeconds: number;
+  nightDurationSeconds: number;
+  cycleEpoch: string;
+  cycleOffsetSeconds: number;
+  scheduleRevision: number;
+}>;
+
+export const DEFAULT_GARDEN_SUN_SCHEDULE: WorldSunSchedule = Object.freeze({
+  dayDurationSeconds: 60,
+  nightDurationSeconds: 60,
+  cycleEpoch: "2026-01-01T00:00:00.000Z",
+  cycleOffsetSeconds: 0,
+  scheduleRevision: 1,
+});
+
 export type GardenSceneProjectionV1 = Readonly<{
   schemaVersion: typeof GARDEN_SCENE_SCHEMA_VERSION;
   sceneId: "garden-alpha-v1";
@@ -26,44 +42,74 @@ export type GardenSceneProjectionV1 = Readonly<{
   }>;
   sun: Readonly<{
     kind: "orbiting-mythic-sun";
-    dayDurationSeconds: 60;
-    nightDurationSeconds: 60;
+    assetId: "mythic-sun";
+    assetVersion: 1;
+    diameter: 52;
+    quality: "medium";
+    seed: 17;
+    palette: Readonly<{
+      heart: "#ffe29a";
+      plasma: "#ff8a3d";
+      ember: "#b84a32";
+      shadow: "#3a1820";
+    }>;
+    dayDurationSeconds: number;
+    nightDurationSeconds: number;
+    cycleEpoch: string;
+    cycleOffsetSeconds: number;
+    scheduleRevision: number;
     sunlight: "#fff3d0";
     maxIntensity: 1.25;
   }>;
 }>;
 
-export const GARDEN_SCENE: GardenSceneProjectionV1 = Object.freeze({
-  schemaVersion: GARDEN_SCENE_SCHEMA_VERSION,
-  sceneId: "garden-alpha-v1",
-  voxelLandscape: Object.freeze({
-    kind: "flat-chunk-grid",
-    voxelSizeMeters: 1,
-    chunkSize: 16,
-    chunkRadius: 14,
-    diffuse: "#3f9b45",
-    emissive: "#102d13",
-    specular: "#17351a",
-  }),
-  skybox: Object.freeze({
-    kind: "solid-color-sphere",
-    diameter: 440,
-    segments: 24,
-    dayColor: "#55a9ed",
-    nightColor: "#020718",
-  }),
-  sun: Object.freeze({
-    kind: "orbiting-mythic-sun",
-    dayDurationSeconds: 60,
-    nightDurationSeconds: 60,
-    sunlight: "#fff3d0",
-    maxIntensity: 1.25,
-  }),
-});
+export function createGardenScene(
+  schedule: WorldSunSchedule = DEFAULT_GARDEN_SUN_SCHEDULE,
+): GardenSceneProjectionV1 {
+  return Object.freeze({
+    schemaVersion: GARDEN_SCENE_SCHEMA_VERSION,
+    sceneId: "garden-alpha-v1",
+    voxelLandscape: Object.freeze({
+      kind: "flat-chunk-grid",
+      voxelSizeMeters: 1,
+      chunkSize: 16,
+      chunkRadius: 14,
+      diffuse: "#3f9b45",
+      emissive: "#102d13",
+      specular: "#17351a",
+    }),
+    skybox: Object.freeze({
+      kind: "solid-color-sphere",
+      diameter: 440,
+      segments: 24,
+      dayColor: "#55a9ed",
+      nightColor: "#020718",
+    }),
+    sun: Object.freeze({
+      kind: "orbiting-mythic-sun",
+      assetId: "mythic-sun",
+      assetVersion: 1,
+      diameter: 52,
+      quality: "medium",
+      seed: 17,
+      palette: Object.freeze({
+        heart: "#ffe29a",
+        plasma: "#ff8a3d",
+        ember: "#b84a32",
+        shadow: "#3a1820",
+      }),
+      dayDurationSeconds: schedule.dayDurationSeconds,
+      nightDurationSeconds: schedule.nightDurationSeconds,
+      cycleEpoch: schedule.cycleEpoch,
+      cycleOffsetSeconds: schedule.cycleOffsetSeconds,
+      scheduleRevision: schedule.scheduleRevision,
+      sunlight: "#fff3d0",
+      maxIntensity: 1.25,
+    }),
+  });
+}
 
-const GARDEN_CONTENT_HASH = createHash("sha256")
-  .update(JSON.stringify(GARDEN_SCENE))
-  .digest("hex");
+export const GARDEN_SCENE = createGardenScene();
 
 type BootstrapBase = Readonly<{
   schemaVersion: 1;
@@ -115,6 +161,8 @@ function bootstrapBase(value: unknown): BootstrapBase | null {
 
 export class GardenWorldRuntime {
   #warmed = false;
+  readonly #sceneProjection: GardenSceneProjectionV1;
+  readonly #contentHash: string;
   readonly #sessions = new Map<string, Readonly<{
     worldSessionId: string;
     accountId: string;
@@ -128,7 +176,13 @@ export class GardenWorldRuntime {
     readonly maxInstances = 256,
     readonly now: () => Date = () => new Date(),
     readonly id: () => string = randomUUID,
-  ) {}
+    readonly sunSchedule: WorldSunSchedule = DEFAULT_GARDEN_SUN_SCHEDULE,
+  ) {
+    this.#sceneProjection = createGardenScene(sunSchedule);
+    this.#contentHash = createHash("sha256")
+      .update(JSON.stringify(this.#sceneProjection))
+      .digest("hex");
+  }
 
   prewarm(value: unknown) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -141,7 +195,7 @@ export class GardenWorldRuntime {
   scene(worldSessionId?: string): GardenSceneProjectionV1 | null {
     if (!this.#warmed) return null;
     if (worldSessionId && !this.bootstrap(worldSessionId)) return null;
-    return GARDEN_SCENE;
+    return this.#sceneProjection;
   }
 
   admit(verified: WorldAdmissionClaims) {
@@ -181,9 +235,9 @@ export class GardenWorldRuntime {
       worldId: GARDEN_WORLD_ID,
       characterId: session.characterId,
       leaseExpiresAt: new Date(session.leaseExpiresAtMs).toISOString(),
-      serverSnapshot: Object.freeze({ contentRevision: 1, contentHash: GARDEN_CONTENT_HASH }),
+      serverSnapshot: Object.freeze({ contentRevision: 1, contentHash: this.#contentHash }),
       hudProjectionRevision: 1,
-      scene: GARDEN_SCENE,
+      scene: this.#sceneProjection,
     });
   }
 
@@ -199,7 +253,7 @@ export class GardenWorldRuntime {
       leaseExpiresAt: bootstrap.leaseExpiresAt,
       serverSnapshot: Object.freeze({ ...bootstrap.serverSnapshot }),
       hudProjectionRevision: bootstrap.hudProjectionRevision,
-      scene: GARDEN_SCENE,
+      scene: this.#sceneProjection,
     });
   }
 }

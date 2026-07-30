@@ -1,4 +1,8 @@
-import type { WorldRuntimeMode } from "./world-runtime.js";
+import {
+  DEFAULT_GARDEN_SUN_SCHEDULE,
+  type WorldRuntimeMode,
+  type WorldSunSchedule,
+} from "./world-runtime.js";
 
 export type WorldHandlerConfig = Readonly<{
   host: string;
@@ -21,6 +25,7 @@ export type WorldHandlerConfig = Readonly<{
   runtimeLeaseMs?: number;
   runtimeMaxInstances?: number;
   admissionSigningSecret?: string | null;
+  sunSchedule?: WorldSunSchedule;
 }>;
 
 function port(value: string | undefined): number {
@@ -36,6 +41,28 @@ function positiveInteger(value: string | undefined, fallback: number, name: stri
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer.`);
   return parsed;
+}
+
+function boundedPositiveInteger(value: string | undefined, fallback: number, name: string, maximum: number): number {
+  const parsed = positiveInteger(value, fallback, name);
+  if (parsed > maximum) throw new Error(`${name} must be no greater than ${maximum}.`);
+  return parsed;
+}
+
+function nonNegativeNumber(value: string | undefined, fallback: number, name: string): number {
+  if (!value?.trim()) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative number.`);
+  return parsed;
+}
+
+function rfc3339(value: string | undefined, fallback: string, name: string): string {
+  if (!value?.trim()) return fallback;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString() !== value.trim()) {
+    throw new Error(`${name} must be canonical RFC3339 UTC milliseconds.`);
+  }
+  return parsed.toISOString();
 }
 
 function origin(value: string | undefined, allowed: string | undefined): URL | null {
@@ -100,5 +127,34 @@ export function readWorldHandlerConfig(env = process.env): WorldHandlerConfig {
     runtimeLeaseMs: positiveInteger(env.WORLD_RUNTIME_LEASE_MS, 900_000, "WORLD_RUNTIME_LEASE_MS"),
     runtimeMaxInstances: positiveInteger(env.WORLD_RUNTIME_MAX_INSTANCES, 256, "WORLD_RUNTIME_MAX_INSTANCES"),
     admissionSigningSecret,
+    sunSchedule: Object.freeze({
+      dayDurationSeconds: boundedPositiveInteger(
+        env.WORLD_SUN_DAY_DURATION_SECONDS,
+        DEFAULT_GARDEN_SUN_SCHEDULE.dayDurationSeconds,
+        "WORLD_SUN_DAY_DURATION_SECONDS",
+        86_400,
+      ),
+      nightDurationSeconds: boundedPositiveInteger(
+        env.WORLD_SUN_NIGHT_DURATION_SECONDS,
+        DEFAULT_GARDEN_SUN_SCHEDULE.nightDurationSeconds,
+        "WORLD_SUN_NIGHT_DURATION_SECONDS",
+        86_400,
+      ),
+      cycleEpoch: rfc3339(
+        env.WORLD_SUN_CYCLE_EPOCH,
+        DEFAULT_GARDEN_SUN_SCHEDULE.cycleEpoch,
+        "WORLD_SUN_CYCLE_EPOCH",
+      ),
+      cycleOffsetSeconds: nonNegativeNumber(
+        env.WORLD_SUN_CYCLE_OFFSET_SECONDS,
+        DEFAULT_GARDEN_SUN_SCHEDULE.cycleOffsetSeconds,
+        "WORLD_SUN_CYCLE_OFFSET_SECONDS",
+      ),
+      scheduleRevision: positiveInteger(
+        env.WORLD_SUN_SCHEDULE_REVISION,
+        DEFAULT_GARDEN_SUN_SCHEDULE.scheduleRevision,
+        "WORLD_SUN_SCHEDULE_REVISION",
+      ),
+    }),
   };
 }

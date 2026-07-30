@@ -105,9 +105,42 @@ test("Garden scene matches the web renderer's exact three-component contract", (
     kind: "solid-color-sphere", diameter: 440, segments: 24, dayColor: "#55a9ed", nightColor: "#020718",
   });
   assert.deepEqual(GARDEN_SCENE.sun, {
-    kind: "orbiting-mythic-sun", dayDurationSeconds: 60, nightDurationSeconds: 60,
+    kind: "orbiting-mythic-sun",
+    assetId: "mythic-sun",
+    assetVersion: 1,
+    diameter: 52,
+    quality: "medium",
+    seed: 17,
+    palette: { heart: "#ffe29a", plasma: "#ff8a3d", ember: "#b84a32", shadow: "#3a1820" },
+    dayDurationSeconds: 60,
+    nightDurationSeconds: 60,
+    cycleEpoch: "2026-01-01T00:00:00.000Z",
+    cycleOffsetSeconds: 0,
+    scheduleRevision: 1,
     sunlight: "#fff3d0", maxIntensity: 1.25,
   });
+});
+
+test("Garden sun schedule is a server_world-specific scene variable", () => {
+  const schedule = {
+    dayDurationSeconds: 900,
+    nightDurationSeconds: 300,
+    cycleEpoch: "2026-07-29T00:00:00.000Z",
+    cycleOffsetSeconds: 45,
+    scheduleRevision: 7,
+  };
+  const runtime = new GardenWorldRuntime("host", 900_000, 4, undefined, undefined, schedule);
+  runtime.prewarm({ worldId: "garden" });
+  const scene = runtime.scene();
+  assert.ok(scene);
+  assert.deepEqual({
+    dayDurationSeconds: scene.sun.dayDurationSeconds,
+    nightDurationSeconds: scene.sun.nightDurationSeconds,
+    cycleEpoch: scene.sun.cycleEpoch,
+    cycleOffsetSeconds: scene.sun.cycleOffsetSeconds,
+    scheduleRevision: scene.sun.scheduleRevision,
+  }, schedule);
+  assert.equal(scene.sun.assetId, "mythic-sun");
 });
 
 test("verified admission binds a distinct Garden world session with one-call bootstrap", () => {
@@ -239,4 +272,29 @@ test("local configuration rejects non-loopback binding and incomplete mode value
   );
   assert.throws(() => readWorldHandlerConfig({ WORLD_RUNTIME_MODE: "automatic" }), /must be host or local/);
   assert.equal(readWorldHandlerConfig({ WORLD_RUNTIME_MODE: "local" }).host, "127.0.0.1");
+});
+
+test("sun schedule environment values are bounded and canonical", () => {
+  const config = readWorldHandlerConfig({
+    WORLD_SUN_DAY_DURATION_SECONDS: "900",
+    WORLD_SUN_NIGHT_DURATION_SECONDS: "300",
+    WORLD_SUN_CYCLE_EPOCH: "2026-07-29T00:00:00.000Z",
+    WORLD_SUN_CYCLE_OFFSET_SECONDS: "45.5",
+    WORLD_SUN_SCHEDULE_REVISION: "7",
+  });
+  assert.deepEqual(config.sunSchedule, {
+    dayDurationSeconds: 900,
+    nightDurationSeconds: 300,
+    cycleEpoch: "2026-07-29T00:00:00.000Z",
+    cycleOffsetSeconds: 45.5,
+    scheduleRevision: 7,
+  });
+  assert.throws(
+    () => readWorldHandlerConfig({ WORLD_SUN_DAY_DURATION_SECONDS: "86401" }),
+    /WORLD_SUN_DAY_DURATION_SECONDS/,
+  );
+  assert.throws(
+    () => readWorldHandlerConfig({ WORLD_SUN_CYCLE_EPOCH: "2026-07-29" }),
+    /WORLD_SUN_CYCLE_EPOCH/,
+  );
 });
