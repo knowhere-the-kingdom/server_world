@@ -8,7 +8,8 @@
   },
   "scripts": {
     "dev": "tsx src/server.ts",
-    "test": "tsx --test src/server.test.ts",
+    "start": "tsx src/server.ts",
+    "test": "tsx --test src/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
