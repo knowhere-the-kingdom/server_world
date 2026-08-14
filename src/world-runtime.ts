@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { WorldAdmissionClaims } from "./admission-ticket.js";
-import { GARDEN_SCENE_SCHEMA_VERSION, GARDEN_WORLD_ID } from "./protocol.js";
+import { GARDEN_SCENE_SCHEMA_VERSION, GARDEN_WORLD_ID, UNDERWORLD_WORLD_ID, isWorldId, type WorldId } from "./protocol.js";
 
 export type WorldRuntimeMode = "host" | "local";
 
@@ -111,10 +111,101 @@ export function createGardenScene(
 
 export const GARDEN_SCENE = createGardenScene();
 
+export type UnderworldSceneProjectionV1 = Readonly<{
+  schemaVersion: typeof GARDEN_SCENE_SCHEMA_VERSION;
+  sceneId: "underworld-alpha-v1";
+  voxelLandscape: Readonly<{
+    kind: "flat-stone-voxel-plane";
+    voxelSizeMeters: 1;
+    widthMeters: 1000;
+    depthMeters: 1000;
+    surfaceY: 0;
+    blockMaterial: "stone";
+    renderChunkSizeMeters: 100;
+    diffuse: "#6f7478";
+    emissive: "#111416";
+    specular: "#30363b";
+  }>;
+  topology: Readonly<{
+    kind: "inside-out-cube-sphere";
+    projection: "spherified-cube";
+    radiusMeters: 6371000;
+    starterPatchMeters: 1000;
+    gravityDirection: "away-from-center";
+  }>;
+  skybox: GardenSceneProjectionV1["skybox"];
+  sun: Readonly<{
+    kind: "static-mythic-sun";
+    assetId: "mythic-sun";
+    assetVersion: 1;
+    diameter: 52;
+    quality: "medium";
+    seed: 17;
+    palette: GardenSceneProjectionV1["sun"]["palette"];
+    fixedPosition: Readonly<{ x: 0; y: 180; z: 0 }>;
+    dayDurationSeconds: number;
+    nightDurationSeconds: number;
+    cycleEpoch: string;
+    cycleOffsetSeconds: number;
+    scheduleRevision: number;
+    sunlight: "#fff3d0";
+    maxIntensity: 1.25;
+  }>;
+}>;
+
+export type WorldSceneProjectionV1 = GardenSceneProjectionV1 | UnderworldSceneProjectionV1;
+
+export function createUnderworldScene(): UnderworldSceneProjectionV1 {
+  const garden = createGardenScene();
+  return Object.freeze({
+    schemaVersion: GARDEN_SCENE_SCHEMA_VERSION,
+    sceneId: "underworld-alpha-v1",
+    voxelLandscape: Object.freeze({
+      kind: "flat-stone-voxel-plane",
+      voxelSizeMeters: 1,
+      widthMeters: 1000,
+      depthMeters: 1000,
+      surfaceY: 0,
+      blockMaterial: "stone",
+      renderChunkSizeMeters: 100,
+      diffuse: "#6f7478",
+      emissive: "#111416",
+      specular: "#30363b",
+    }),
+    topology: Object.freeze({
+      kind: "inside-out-cube-sphere",
+      projection: "spherified-cube",
+      radiusMeters: 6371000,
+      starterPatchMeters: 1000,
+      gravityDirection: "away-from-center",
+    }),
+    skybox: garden.skybox,
+    sun: Object.freeze({
+      kind: "static-mythic-sun",
+      assetId: garden.sun.assetId,
+      assetVersion: garden.sun.assetVersion,
+      diameter: garden.sun.diameter,
+      quality: garden.sun.quality,
+      seed: garden.sun.seed,
+      palette: garden.sun.palette,
+      fixedPosition: Object.freeze({ x: 0, y: 180, z: 0 }),
+      dayDurationSeconds: garden.sun.dayDurationSeconds,
+      nightDurationSeconds: garden.sun.nightDurationSeconds,
+      cycleEpoch: garden.sun.cycleEpoch,
+      cycleOffsetSeconds: garden.sun.cycleOffsetSeconds,
+      scheduleRevision: garden.sun.scheduleRevision,
+      sunlight: garden.sun.sunlight,
+      maxIntensity: garden.sun.maxIntensity,
+    }),
+  });
+}
+
+export const UNDERWORLD_SCENE = createUnderworldScene();
+
 type BootstrapBase = Readonly<{
   schemaVersion: 1;
   worldSessionId: string;
-  worldId: typeof GARDEN_WORLD_ID;
+  worldId: WorldId;
   characterId: string;
   leaseExpiresAt: string;
   serverSnapshot: Readonly<{ contentRevision: number; contentHash: string }>;
@@ -137,7 +228,7 @@ function bootstrapBase(value: unknown): BootstrapBase | null {
   if (!exactKeys(record, ["schemaVersion", "worldSessionId", "worldId", "characterId", "leaseExpiresAt", "serverSnapshot", "hudProjectionRevision"])) return null;
   if (
     record.schemaVersion !== 1
-    || record.worldId !== GARDEN_WORLD_ID
+    || !isWorldId(record.worldId)
     || !opaque(record.worldSessionId)
     || !opaque(record.characterId)
     || typeof record.leaseExpiresAt !== "string"
@@ -160,13 +251,14 @@ function bootstrapBase(value: unknown): BootstrapBase | null {
 }
 
 export class GardenWorldRuntime {
-  #warmed = false;
-  readonly #sceneProjection: GardenSceneProjectionV1;
-  readonly #contentHash: string;
+  readonly #warmed = new Set<WorldId>();
+  readonly #sceneProjections: Readonly<Record<WorldId, WorldSceneProjectionV1>>;
+  readonly #contentHashes: Readonly<Record<WorldId, string>>;
   readonly #sessions = new Map<string, Readonly<{
     worldSessionId: string;
     accountId: string;
     characterId: string;
+    worldId: WorldId;
     leaseExpiresAtMs: number;
   }>>();
 
@@ -178,29 +270,33 @@ export class GardenWorldRuntime {
     readonly id: () => string = randomUUID,
     readonly sunSchedule: WorldSunSchedule = DEFAULT_GARDEN_SUN_SCHEDULE,
   ) {
-    this.#sceneProjection = createGardenScene(sunSchedule);
-    this.#contentHash = createHash("sha256")
-      .update(JSON.stringify(this.#sceneProjection))
-      .digest("hex");
+    this.#sceneProjections = Object.freeze({
+      garden: createGardenScene(sunSchedule),
+      underworld: createUnderworldScene(),
+    });
+    this.#contentHashes = Object.freeze({
+      garden: createHash("sha256").update(JSON.stringify(this.#sceneProjections.garden)).digest("hex"),
+      underworld: createHash("sha256").update(JSON.stringify(this.#sceneProjections.underworld)).digest("hex"),
+    });
   }
 
   prewarm(value: unknown) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     const record = value as Record<string, unknown>;
-    if (!exactKeys(record, ["worldId"]) || record.worldId !== GARDEN_WORLD_ID) return null;
-    this.#warmed = true;
-    return Object.freeze({ worldId: GARDEN_WORLD_ID, status: "ready" as const, sceneRevision: 1 as const });
+    if (!exactKeys(record, ["worldId"]) || !isWorldId(record.worldId)) return null;
+    this.#warmed.add(record.worldId);
+    return Object.freeze({ worldId: record.worldId, status: "ready" as const, sceneRevision: 1 as const });
   }
 
-  scene(worldSessionId?: string): GardenSceneProjectionV1 | null {
-    if (!this.#warmed) return null;
-    if (worldSessionId && !this.bootstrap(worldSessionId)) return null;
-    return this.#sceneProjection;
+  scene(worldSessionId?: string): WorldSceneProjectionV1 | null {
+    if (!worldSessionId) return this.#warmed.has(GARDEN_WORLD_ID) ? this.#sceneProjections.garden : null;
+    const bootstrap = this.bootstrap(worldSessionId);
+    return bootstrap?.scene ?? null;
   }
 
   admit(verified: WorldAdmissionClaims) {
     const nowMs = this.now().getTime();
-    if (!this.#warmed || verified.worldId !== GARDEN_WORLD_ID || Date.parse(verified.expiresAt) <= nowMs) return null;
+    if (!this.#warmed.has(verified.worldId) || Date.parse(verified.expiresAt) <= nowMs) return null;
     for (const [worldSessionId, session] of this.#sessions) {
       if (session.leaseExpiresAtMs <= nowMs) this.#sessions.delete(worldSessionId);
     }
@@ -210,6 +306,7 @@ export class GardenWorldRuntime {
       worldSessionId,
       accountId: verified.accountId,
       characterId: verified.characterId,
+      worldId: verified.worldId,
       leaseExpiresAtMs: nowMs + this.leaseMs,
     });
     this.#sessions.set(worldSessionId, session);
@@ -217,7 +314,7 @@ export class GardenWorldRuntime {
       protocolVersion: "1.0.0" as const,
       sessionId: worldSessionId,
       characterId: session.characterId,
-      worldId: GARDEN_WORLD_ID,
+      worldId: session.worldId,
       expiresAt: new Date(session.leaseExpiresAtMs).toISOString(),
     });
   }
@@ -232,19 +329,18 @@ export class GardenWorldRuntime {
     return Object.freeze({
       schemaVersion: 1 as const,
       worldSessionId: session.worldSessionId,
-      worldId: GARDEN_WORLD_ID,
+      worldId: session.worldId,
       characterId: session.characterId,
       leaseExpiresAt: new Date(session.leaseExpiresAtMs).toISOString(),
-      serverSnapshot: Object.freeze({ contentRevision: 1, contentHash: this.#contentHash }),
+      serverSnapshot: Object.freeze({ contentRevision: 1, contentHash: this.#contentHashes[session.worldId] }),
       hudProjectionRevision: 1,
-      scene: this.#sceneProjection,
+      scene: this.#sceneProjections[session.worldId],
     });
   }
 
   attachScene(value: unknown) {
-    if (!this.#warmed) return null;
     const bootstrap = bootstrapBase(value);
-    if (!bootstrap) return null;
+    if (!bootstrap || !this.#warmed.has(bootstrap.worldId)) return null;
     return Object.freeze({
       schemaVersion: bootstrap.schemaVersion,
       worldSessionId: bootstrap.worldSessionId,
@@ -253,7 +349,7 @@ export class GardenWorldRuntime {
       leaseExpiresAt: bootstrap.leaseExpiresAt,
       serverSnapshot: Object.freeze({ ...bootstrap.serverSnapshot }),
       hudProjectionRevision: bootstrap.hudProjectionRevision,
-      scene: this.#sceneProjection,
+      scene: this.#sceneProjections[bootstrap.worldId],
     });
   }
 }

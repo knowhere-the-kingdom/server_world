@@ -7,7 +7,7 @@ import test from "node:test";
 import { readWorldHandlerConfig, type WorldHandlerConfig } from "./config.js";
 import { HmacAdmissionTicketVerifier } from "./admission-ticket.js";
 import { createWorldHandler } from "./server.js";
-import { GARDEN_SCENE, GardenWorldRuntime } from "./world-runtime.js";
+import { GARDEN_SCENE, UNDERWORLD_SCENE, GardenWorldRuntime } from "./world-runtime.js";
 
 const runtimeConfig: WorldHandlerConfig = {
   host: "127.0.0.1",
@@ -141,6 +141,43 @@ test("Garden sun schedule is a server_world-specific scene variable", () => {
     scheduleRevision: scene.sun.scheduleRevision,
   }, schedule);
   assert.equal(scene.sun.assetId, "mythic-sun");
+});
+
+test("Underworld is a closed one-kilometer stone voxel starter world with a static high-noon sun", () => {
+  assert.deepEqual(UNDERWORLD_SCENE.voxelLandscape, {
+    kind: "flat-stone-voxel-plane",
+    voxelSizeMeters: 1,
+    widthMeters: 1000,
+    depthMeters: 1000,
+    surfaceY: 0,
+    blockMaterial: "stone",
+    renderChunkSizeMeters: 100,
+    diffuse: "#6f7478",
+    emissive: "#111416",
+    specular: "#30363b",
+  });
+  assert.deepEqual(UNDERWORLD_SCENE.topology, {
+    kind: "inside-out-cube-sphere",
+    projection: "spherified-cube",
+    radiusMeters: 6371000,
+    starterPatchMeters: 1000,
+    gravityDirection: "away-from-center",
+  });
+  assert.deepEqual(UNDERWORLD_SCENE.skybox, GARDEN_SCENE.skybox);
+  assert.deepEqual(UNDERWORLD_SCENE.sun.palette, GARDEN_SCENE.sun.palette);
+  assert.deepEqual(UNDERWORLD_SCENE.sun.fixedPosition, { x: 0, y: 180, z: 0 });
+});
+
+test("Underworld prewarm and admission bootstrap only the selected closed world", () => {
+  const runtime = new GardenWorldRuntime("host", 900_000, 4, () => new Date("2026-07-29T12:00:00.000Z"), () => "underworld-session-1");
+  assert.deepEqual(runtime.prewarm({ worldId: "underworld" }), { worldId: "underworld", status: "ready", sceneRevision: 1 });
+  const admitted = runtime.admit({ ...ticketClaims, ticketId: "underworld-ticket-1", worldId: "underworld" });
+  assert.ok(admitted);
+  assert.equal(admitted.worldId, "underworld");
+  const bootstrap = runtime.bootstrap(admitted.sessionId);
+  assert.ok(bootstrap);
+  assert.equal(bootstrap.worldId, "underworld");
+  assert.deepEqual(bootstrap.scene, UNDERWORLD_SCENE);
 });
 
 test("verified admission binds a distinct Garden world session with one-call bootstrap", () => {

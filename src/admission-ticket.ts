@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { isWorldId, type WorldId } from "./protocol.js";
 
 export type WorldAdmissionClaims = Readonly<{
   version: "1.0";
@@ -9,7 +10,7 @@ export type WorldAdmissionClaims = Readonly<{
   sessionId: string;
   authorizationRevision: number;
   characterId: string;
-  worldId: "garden";
+  worldId: WorldId;
   issuedAt: string;
   expiresAt: string;
 }>;
@@ -32,7 +33,7 @@ function claims(value: unknown): WorldAdmissionClaims | null {
     record.version !== "1.0"
     || record.issuer !== "knowhere-gatekeeper"
     || record.audience !== "local-gamemaster"
-    || record.worldId !== "garden"
+    || !isWorldId(record.worldId)
     || !opaque(record.ticketId)
     || !opaque(record.accountId)
     || !opaque(record.sessionId)
